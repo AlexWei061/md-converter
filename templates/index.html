@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MD Converter — 文档双向转换</title>
+  <style>
+    /* ── Design tokens ─────────────────────────────────────── */
+    :root {
+      --bg:        #0f1117;
+      --surface:   #181c27;
+      --surface2:  #1e2438;
+      --border:    #2a3050;
+      --accent:    #5b8af5;
+      --accent-dk: #3d6de0;
+      --accent-glow: rgba(91,138,245,0.18);
+      --green:     #3ecf8e;
+      --red:       #f56565;
+      --yellow:    #f6c05c;
+      --text:      #e2e8f8;
+      --muted:     #7a87a8;
+      --mono:      'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      --sans:      'Inter', system-ui, -apple-system, sans-serif;
+      --radius:    10px;
+      --radius-lg: 16px;
+    }
+
+    /* ── Reset ─────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    /* ── Typography ────────────────────────────────────────── */
+    h1 { font-size: clamp(1.6rem, 4vw, 2.2rem); font-weight: 700; letter-spacing: -0.02em; }
+    h2 { font-size: 1.05rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+    p  { color: var(--muted); font-size: 0.92rem; }
+
+    /* ── Layout ────────────────────────────────────────────── */
+    header {
+      padding: 2rem 2rem 1.4rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .logo-icon {
+      width: 40px; height: 40px;
+      background: linear-gradient(135deg, var(--accent), #a78bfa);
+      border-radius: 10px;
+      display: grid; place-items: center;
+      font-size: 1.2rem; flex-shrink: 0;
+    }
+    .header-text h1 { font-size: 1.4rem; }
+    .header-text p  { font-size: 0.82rem; margin-top: 0.1rem; }
+
+    .dep-bar {
+      display: flex; gap: 0.6rem; padding: 0.7rem 2rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      flex-wrap: wrap;
+    }
+    .dep-pill {
+      font-size: 0.75rem; font-family: var(--mono);
+      padding: 0.2rem 0.6rem; border-radius: 99px;
+      display: flex; align-items: center; gap: 0.35rem;
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .dep-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+    .dep-pill.ok .dot  { background: var(--green); }
+    .dep-pill.ok       { color: var(--text); }
+    .dep-pill.err .dot { background: var(--red); }
+
+    main {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0;
+      height: calc(100vh - 105px);
+    }
+    @media (max-width: 820px) {
+      main { grid-template-columns: 1fr; height: auto; }
+    }
+
+    .panel {
+      display: flex; flex-direction: column;
+      padding: 1.5rem;
+      border-right: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .panel:last-child { border-right: none; }
+
+    .panel-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 1rem; flex-shrink: 0;
+    }
+    .panel-title {
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+    .badge {
+      font-size: 0.7rem; font-family: var(--mono);
+      padding: 0.15rem 0.5rem; border-radius: 4px;
+      background: var(--accent-glow); color: var(--accent);
+      border: 1px solid rgba(91,138,245,0.3);
+    }
+
+    /* ── Drop zone ─────────────────────────────────────────── */
+    .dropzone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius-lg);
+      padding: 2rem 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      flex-shrink: 0;
+      background: var(--surface);
+    }
+    .dropzone:hover, .dropzone.drag-over {
+      border-color: var(--accent);
+      background: var(--accent-glow);
+    }
+    .dropzone input[type=file] { display: none; }
+    .dropzone-icon { font-size: 2rem; margin-bottom: 0.6rem; }
+    .dropzone p { font-size: 0.85rem; }
+    .dropzone p span { color: var(--accent); text-decoration: underline; cursor: pointer; }
+    .dropzone .formats {
+      margin-top: 0.5rem; font-size: 0.72rem;
+      color: var(--muted); font-family: var(--mono);
+    }
+
+    /* ── Textarea ──────────────────────────────────────────── */
+    .editor-wrap {
+      flex: 1; display: flex; flex-direction: column;
+      margin-top: 1rem; min-height: 0;
+    }
+    .editor-toolbar {
+      display: flex; gap: 0.4rem; margin-bottom: 0.4rem; flex-shrink: 0; flex-wrap: wrap;
+    }
+    textarea {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      line-height: 1.65;
+      padding: 1rem;
+      resize: none;
+      outline: none;
+      transition: border-color .2s;
+      min-height: 180px;
+    }
+    textarea:focus { border-color: var(--accent); }
+    textarea::placeholder { color: var(--muted); }
+
+    /* ── Buttons ───────────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      padding: 0.45rem 1rem;
+      border-radius: var(--radius);
+      font-size: 0.82rem; font-weight: 500;
+      cursor: pointer; border: none; transition: all .15s;
+      font-family: var(--sans);
+      white-space: nowrap;
+    }
+    .btn-primary {
+      background: var(--accent); color: #fff;
+    }
+    .btn-primary:hover { background: var(--accent-dk); }
+    .btn-primary:active { transform: scale(.97); }
+    .btn-outline {
+      background: transparent; color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-ghost {
+      background: var(--surface2); color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover { border-color: var(--accent); }
+    .btn-success {
+      background: var(--green); color: #0f1117;
+    }
+    .btn-success:hover { opacity: .9; }
+    .btn[disabled] { opacity: .4; cursor: not-allowed; pointer-events: none; }
+
+    .action-row {
+      display: flex; gap: 0.5rem; margin-top: 0.8rem;
+      flex-shrink: 0; flex-wrap: wrap;
+    }
+
+    /* ── File info strip ───────────────────────────────────── */
+    .file-info {
+      display: none; align-items: center; gap: 0.6rem;
+      padding: 0.5rem 0.8rem;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: var(--radius); font-size: 0.82rem;
+      margin-top: 0.6rem; flex-shrink: 0;
+    }
+    .file-info.visible { display: flex; }
+    .file-icon { font-size: 1.1rem; }
+    .file-name { flex: 1; font-family: var(--mono); color: var(--text); }
+    .file-size { color: var(--muted); font-size: 0.75rem; }
+    .file-remove { cursor: pointer; color: var(--muted); }
+    .file-remove:hover { color: var(--red); }
+
+    /* ── Status / toast ────────────────────────────────────── */
+    .status {
+      margin-top: 0.6rem; padding: 0.6rem 0.8rem;
+      border-radius: var(--radius); font-size: 0.82rem;
+      display: none; flex-shrink: 0;
+    }
+    .status.visible { display: block; }
+    .status.loading { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+    .status.error   { background: rgba(245,101,101,.12); color: var(--red); border: 1px solid rgba(245,101,101,.3); }
+    .status.success { background: rgba(62,207,142,.1); color: var(--green); border: 1px solid rgba(62,207,142,.3); }
+
+    /* ── Spinner ───────────────────────────────────────────── */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      display: inline-block; width: 12px; height: 12px;
+      border: 2px solid currentColor; border-top-color: transparent;
+      border-radius: 50%; animation: spin .7s linear infinite;
+    }
+
+    /* ── Word count ────────────────────────────────────────── */
+    .word-count {
+      font-size: 0.72rem; color: var(--muted);
+      text-align: right; margin-top: 0.3rem; flex-shrink: 0;
+    }
+
+    /* ── Divider arrow ─────────────────────────────────────── */
+    .panel-arrow {
+      display: none;
+      align-items: center; justify-content: center;
+      padding: 0.5rem 0;
+      color: var(--muted); font-size: 1.2rem;
+    }
+    @media (max-width: 820px) {
+      .panel { border-right: none; border-bottom: 1px solid var(--border); }
+      .panel-arrow { display: flex; }
+    }
+
+    /* ── Compact dropzone (右侧) ───────────────────────────── */
+    .dropzone-sm {
+      padding: 0.65rem 1rem;
+      flex-shrink: 0;
+    }
+    .dropzone-sm p { margin: 0; }
+
+    /* ── Right panel layout ─────────────────────────────── */
+    #rightPanel { overflow-y: auto; }
+    #rightPanel .editor-wrap {
+      flex: 1; display: flex; flex-direction: column;
+      margin-top: 0.6rem; min-height: 0;
+    }
+    #rightPanel .editor-wrap textarea { flex: 1; min-height: 160px; }
+
+    /* ── Scrollbar ─────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo-icon">⇄</div>
+  <div class="header-text">
+    <h1>MD Converter</h1>
+    <p>文档双向转换 · MarkItDown + Pandoc</p>
+  </div>
+</header>
+
+<!-- 依赖状态栏 -->
+<div class="dep-bar" id="depBar">
+  <div class="dep-pill" id="dep-markitdown"><span class="dot"></span>markitdown</div>
+  <div class="dep-pill" id="dep-pandoc"><span class="dot"></span>pandoc</div>
+  <div class="dep-pill" id="dep-xelatex"><span class="dot"></span>xelatex <small style="opacity:.6">(PDF 推荐)</small></div>
+  <div class="dep-pill" id="dep-chrome"><span class="dot"></span>Chrome <small style="opacity:.6">(PDF 备选)</small></div>
+  <div class="dep-pill" id="dep-wkhtmltopdf"><span class="dot"></span>wkhtmltopdf <small style="opacity:.6">(PDF 兜底)</small></div>
+  <div class="dep-pill" id="dep-md-to-pdf"><span class="dot"></span>md-to-pdf <small style="opacity:.6">(PDF 备选)</small></div>
+</div>
+
+<main>
+  <!-- ── 左面板：其他格式 → Markdown ──────────────── -->
+  <div class="panel" id="leftPanel">
+    <div class="panel-header">
+      <div class="panel-title">
+        <h2>上传文件</h2>
+        <span class="badge">→ Markdown</span>
+      </div>
+      <button class="btn btn-outline" id="btnClearLeft" style="display:none">清除</button>
+    </div>
+
+    <label class="dropzone" id="dropzone">
+      <input type="file" id="fileInput"
+        accept=".pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls,.html,.htm,.csv,.json,.xml,.zip,.epub,.jpg,.jpeg,.png,.gif,.wav,.mp3" />
+      <div class="dropzone-icon">📂</div>
+      <p>拖拽文件到这里，或 <span onclick="document.getElementById('fileInput').click()">点击选择</span></p>
+      <div class="formats">PDF · DOCX · PPTX · XLSX · HTML · CSV · JSON · XML · ZIP · EPUB · 图片 · 音频</div>
+    </label>
+
+    <div class="file-info" id="fileInfo">
+      <span class="file-icon" id="fileIcon">📄</span>
+      <span class="file-name" id="fileName">—</span>
+      <span class="file-size" id="fileSize"></span>
+      <span class="file-remove" id="fileRemove" title="移除">✕</span>
+    </div>
+
+    <div class="status" id="leftStatus"></div>
+
+    <div class="action-row">
+      <button class="btn btn-primary" id="btnConvertToMd" disabled>
+        <span class="spinner" id="spinnerLeft" style="display:none"></span>
+        转换为 Markdown
+      </button>
+    </div>
+
+    <div class="editor-wrap">
+      <div class="editor-toolbar">
+        <button class="btn btn-ghost" id="btnCopyMd" style="display:none">复制</button>
+        <button class="btn btn-ghost" id="btnSendToRight" style="display:none">→ 发送到右侧编辑</button>
+        <button class="btn btn-outline" id="btnDownloadMd" style="display:none">↓ 下载 .md</button>
+      </div>
+      <textarea id="mdOutput" placeholder="转换结果将显示在这里…" readonly></textarea>
+      <div class="word-count" id="leftWordCount"></div>
+    </div>
+  </div>
+
+  <!-- ── 右面板：Markdown → 其他格式 ─────────────── -->
+  <div class="panel" id="rightPanel">
+    <div class="panel-header">
+      <div class="panel-title">
+        <h2>Markdown 编辑</h2>
+        <span class="badge">→ Word / PDF</span>
+      </div>
+      <button class="btn btn-outline" id="btnClearRight">清除</button>
+    </div>
+
+    <!-- .md 文件上传区 -->
+    <label class="dropzone dropzone-sm" id="dropzoneRight">
+      <input type="file" id="mdFileInput" accept=".md,.markdown,.txt" />
+      <div style="display:flex;align-items:center;gap:0.6rem;justify-content:center;flex-wrap:wrap;">
+        <span style="font-size:1.1rem">📝</span>
+        <span style="font-size:0.84rem;color:var(--muted)">
+          拖拽 <code style="font-family:var(--mono);color:var(--accent)">.md</code> 文件到这里，或
+          <span style="color:var(--accent);text-decoration:underline;cursor:pointer"
+                onclick="document.getElementById('mdFileInput').click()">点击上传</span>
+        </span>
+      </div>
+    </label>
+
+    <!-- 已加载的文件信息条 -->
+    <div class="file-info" id="rightFileInfo">
+      <span class="file-icon">📝</span>
+      <span class="file-name" id="rightFileName">—</span>
+      <span class="file-size" id="rightFileSize"></span>
+      <span class="file-remove" id="rightFileRemove" title="移除">✕</span>
+    </div>
+
+    <!-- 图片上传区 -->
+    <div id="imgUploadArea" style="margin-top:0.6rem;flex-shrink:0;">
+      <label class="dropzone dropzone-sm" id="dropzoneImages" style="cursor:pointer;">
+        <input type="file" id="imgFilesInput"
+          accept=".jpg,.jpeg,.png,.gif,.bmp,.webp,.svg,.tiff" multiple />
+        <div style="display:flex;align-items:center;gap:0.6rem;justify-content:center;flex-wrap:wrap;">
+          <span style="font-size:1.1rem">🖼️</span>
+          <span style="font-size:0.84rem;color:var(--muted)">
+            选择图片文件（可多选），或拖拽到这里
+            <span style="color:var(--muted);font-size:0.75rem;display:block;margin-top:0.15rem;">
+              JPG · PNG · GIF · BMP · WebP · SVG — 路径匹配后自动嵌入</span>
+          </span>
+        </div>
+      </label>
+      <!-- 已选图片列表 -->
+      <div id="imgList" style="display:none;margin-top:0.5rem;
+        background:var(--surface2);border:1px solid var(--border);
+        border-radius:var(--radius);padding:0.5rem 0.7rem;max-height:100px;overflow-y:auto;">
+      </div>
+    </div>
+
+    <!-- 编辑区 -->
+    <div class="editor-wrap">
+      <textarea id="mdInput"
+        placeholder="在这里粘贴或编辑 Markdown 内容，也可拖拽上传 .md 文件…
+
+# 示例标题
+这是一段**加粗**文字和*斜体*文字。
+
+## 列表示例
+- 第一项
+- 第二项
+- 第三项
+
+| 列A | 列B |
+|-----|-----|
+| 数据1 | 数据2 |"></textarea>
+    </div>
+
+    <div class="word-count" id="rightWordCount"></div>
+    <div class="status" id="rightStatus"></div>
+
+    <div style="margin-top: 0.8rem; flex-shrink:0;">
+      <label style="font-size:0.8rem; color:var(--muted); display:block; margin-bottom:0.4rem;">
+        输出文件名（可选）
+      </label>
+      <input type="text" id="outputFilename" placeholder="document"
+        style="width:100%; padding:0.45rem 0.7rem; background:var(--surface);
+               border:1px solid var(--border); border-radius:var(--radius);
+               color:var(--text); font-size:0.85rem; outline:none; font-family:var(--mono);" />
+    </div>
+
+    <div class="action-row">
+      <button class="btn btn-primary" id="btnToDocx">
+        <span class="spinner" id="spinnerDocx" style="display:none"></span>
+        ↓ 下载 Word
+      </button>
+      <button class="btn btn-ghost" id="btnToPdf">
+        <span class="spinner" id="spinnerPdf" style="display:none"></span>
+        ↓ 下载 PDF
+      </button>
+    </div>
+  </div>
+</main>
+
+<script>
+/* ── 依赖检查 ──────────────────────────────────────────────── */
+async function checkDeps() {
+  try {
+    const res = await fetch('/api/check-deps');
+    const data = await res.json();
+    for (const [key, ok] of Object.entries(data)) {
+      const el = document.getElementById(`dep-${key}`);
+      if (el) el.classList.add(ok ? 'ok' : 'err');
+    }
+  } catch(e) {}
+}
+checkDeps();
+
+/* ── 工具函数 ──────────────────────────────────────────────── */
+function setStatus(el, type, msg) {
+  el.className = `status ${type} visible`;
+  el.innerHTML = msg;
+}
+function clearStatus(el) {
+  el.className = 'status';
+  el.textContent = '';
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+function wordCount(text) {
+  if (!text.trim()) return '';
+  const chars = text.length;
+  const lines = text.split('\n').length;
+  return `${chars.toLocaleString()} 字符 · ${lines} 行`;
+}
+
+function getExtIcon(filename) {
+  const ext = filename.split('.').pop().toLowerCase();
+  const icons = { pdf:'📕', docx:'📘', doc:'📘', pptx:'📙', ppt:'📙',
+    xlsx:'📗', xls:'📗', html:'🌐', htm:'🌐', csv:'📊',
+    json:'📋', xml:'📋', zip:'🗜️', epub:'📖',
+    jpg:'🖼️', jpeg:'🖼️', png:'🖼️', gif:'🖼️', wav:'🎵', mp3:'🎵' };
+  return icons[ext] || '📄';
+}
+
+/* ── 左面板逻辑 ────────────────────────────────────────────── */
+const fileInput    = document.getElementById('fileInput');
+const dropzone     = document.getElementById('dropzone');
+const fileInfo     = document.getElementById('fileInfo');
+const fileIcon     = document.getElementById('fileIcon');
+const fileName     = document.getElementById('fileName');
+const fileSize     = document.getElementById('fileSize');
+const fileRemove   = document.getElementById('fileRemove');
+const btnConvert   = document.getElementById('btnConvertToMd');
+const btnClearLeft = document.getElementById('btnClearLeft');
+const spinnerLeft  = document.getElementById('spinnerLeft');
+const leftStatus   = document.getElementById('leftStatus');
+const mdOutput     = document.getElementById('mdOutput');
+const btnCopyMd    = document.getElementById('btnCopyMd');
+const btnSendRight = document.getElementById('btnSendToRight');
+const btnDlMd      = document.getElementById('btnDownloadMd');
+const leftWC       = document.getElementById('leftWordCount');
+
+let selectedFile = null;
+
+function setFile(f) {
+  selectedFile = f;
+  fileIcon.textContent = getExtIcon(f.name);
+  fileName.textContent = f.name;
+  fileSize.textContent = formatSize(f.size);
+  fileInfo.classList.add('visible');
+  btnConvert.disabled = false;
+  btnClearLeft.style.display = 'inline-flex';
+  clearStatus(leftStatus);
+}
+
+fileInput.addEventListener('change', e => {
+  if (e.target.files[0]) setFile(e.target.files[0]);
+});
+
+// drag & drop
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag-over'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropzone.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+});
+
+fileRemove.addEventListener('click', clearLeft);
+btnClearLeft.addEventListener('click', clearLeft);
+
+function clearLeft() {
+  selectedFile = null;
+  fileInput.value = '';
+  fileInfo.classList.remove('visible');
+  btnConvert.disabled = true;
+  btnClearLeft.style.display = 'none';
+  mdOutput.value = '';
+  leftWC.textContent = '';
+  [btnCopyMd, btnSendRight, btnDlMd].forEach(b => b.style.display = 'none');
+  clearStatus(leftStatus);
+}
+
+btnConvert.addEventListener('click', async () => {
+  if (!selectedFile) return;
+  btnConvert.disabled = true;
+  spinnerLeft.style.display = 'inline-block';
+  setStatus(leftStatus, 'loading', '<span class="spinner"></span>&nbsp; 正在转换，请稍候…');
+
+  const formData = new FormData();
+  formData.append('file', selectedFile);
+
+  try {
+    const res = await fetch('/api/to-markdown', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      setStatus(leftStatus, 'error', '❌ ' + (data.error || '转换失败'));
+    } else {
+      mdOutput.value = data.markdown;
+      leftWC.textContent = wordCount(data.markdown);
+      [btnCopyMd, btnSendRight, btnDlMd].forEach(b => b.style.display = 'inline-flex');
+      setStatus(leftStatus, 'success', '✅ 转换成功！');
+    }
+  } catch(e) {
+    setStatus(leftStatus, 'error', '❌ 网络错误，请确认服务器正在运行');
+  } finally {
+    spinnerLeft.style.display = 'none';
+    btnConvert.disabled = false;
+  }
+});
+
+btnCopyMd.addEventListener('click', async () => {
+  await navigator.clipboard.writeText(mdOutput.value);
+  const t = btnCopyMd.textContent;
+  btnCopyMd.textContent = '已复制 ✓';
+  setTimeout(() => btnCopyMd.textContent = t, 1500);
+});
+
+btnSendRight.addEventListener('click', () => {
+  mdInput.value = mdOutput.value;
+  rightWC.textContent = wordCount(mdInput.value);
+  mdInput.focus();
+  document.getElementById('rightPanel').scrollIntoView({ behavior: 'smooth' });
+});
+
+btnDlMd.addEventListener('click', () => {
+  const blob = new Blob([mdOutput.value], { type: 'text/markdown' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const base = selectedFile ? selectedFile.name.replace(/\.[^.]+$/, '') : 'output';
+  a.download = base + '.md';
+  a.click();
+});
+
+/* ── 右面板逻辑 ────────────────────────────────────────────── */
+const mdInput        = document.getElementById('mdInput');
+const rightStatus    = document.getElementById('rightStatus');
+const rightWC        = document.getElementById('rightWordCount');
+const btnToDocx      = document.getElementById('btnToDocx');
+const btnToPdf       = document.getElementById('btnToPdf');
+const spinnerDocx    = document.getElementById('spinnerDocx');
+const spinnerPdf     = document.getElementById('spinnerPdf');
+const outputFname    = document.getElementById('outputFilename');
+const mdFileInput    = document.getElementById('mdFileInput');
+const dropzoneRight  = document.getElementById('dropzoneRight');
+const rightFileInfo  = document.getElementById('rightFileInfo');
+const rightFileName  = document.getElementById('rightFileName');
+const rightFileSize  = document.getElementById('rightFileSize');
+const rightFileRemove= document.getElementById('rightFileRemove');
+const imgFilesInput  = document.getElementById('imgFilesInput');
+const dropzoneImages = document.getElementById('dropzoneImages');
+const imgList        = document.getElementById('imgList');
+
+/* 当前选中的图片文件列表 */
+let selectedImages = [];
+
+/* ── 图片选择逻辑 ──────────────────────────────────────────── */
+function updateImageList() {
+  if (selectedImages.length === 0) {
+    imgList.style.display = 'none';
+    imgList.innerHTML = '';
+    return;
+  }
+  imgList.style.display = 'block';
+  imgList.innerHTML = selectedImages.map((f, i) => `
+    <div style="display:flex;align-items:center;gap:0.5rem;padding:0.2rem 0;
+                font-size:0.78rem;border-bottom:1px solid var(--border);">
+      <span>🖼️</span>
+      <span style="flex:1;font-family:var(--mono);color:var(--text);
+                   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
+            title="${f.name}">${f.name}</span>
+      <span style="color:var(--muted);flex-shrink:0;">${formatSize(f.size)}</span>
+      <span style="cursor:pointer;color:var(--muted);flex-shrink:0;"
+            onclick="removeImage(${i})">✕</span>
+    </div>
+  `).join('');
+}
+
+function removeImage(idx) {
+  selectedImages.splice(idx, 1);
+  updateImageList();
+}
+
+function addImages(files) {
+  for (const f of files) {
+    const ext = f.name.split('.').pop().toLowerCase();
+    if (!['jpg','jpeg','png','gif','bmp','webp','svg','tiff','tif'].includes(ext)) continue;
+    // 不重复添加同名文件
+    if (!selectedImages.find(x => x.name === f.name)) {
+      selectedImages.push(f);
+    }
+  }
+  updateImageList();
+}
+
+imgFilesInput.addEventListener('change', e => addImages(e.target.files));
+
+dropzoneImages.addEventListener('dragover', e => {
+  e.preventDefault(); dropzoneImages.classList.add('drag-over');
+});
+dropzoneImages.addEventListener('dragleave', () => dropzoneImages.classList.remove('drag-over'));
+dropzoneImages.addEventListener('drop', e => {
+  e.preventDefault(); dropzoneImages.classList.remove('drag-over');
+  addImages(e.dataTransfer.files);
+});
+
+/* ── .md 文件上传逻辑 ──────────────────────────────────────── */
+let currentMdFile = null;   // 保存 File 对象以便 FormData 用
+
+function loadMdFile(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (!['md','markdown','txt'].includes(ext)) {
+    setStatus(rightStatus, 'error', '❌ 请上传 .md / .markdown / .txt 文件');
+    return;
+  }
+  currentMdFile = file;
+  const reader = new FileReader();
+  reader.onload = e => {
+    mdInput.value = e.target.result;
+    rightWC.textContent = wordCount(mdInput.value);
+    if (!outputFname.value) outputFname.value = file.name.replace(/\.[^.]+$/, '');
+    rightFileName.textContent = file.name;
+    rightFileSize.textContent = formatSize(file.size);
+    rightFileInfo.classList.add('visible');
+    clearStatus(rightStatus);
+  };
+  reader.onerror = () => setStatus(rightStatus, 'error', '❌ 文件读取失败');
+  reader.readAsText(file, 'utf-8');
+}
+
+mdFileInput.addEventListener('change', e => { if (e.target.files[0]) loadMdFile(e.target.files[0]); });
+
+dropzoneRight.addEventListener('dragover', e => { e.preventDefault(); dropzoneRight.classList.add('drag-over'); });
+dropzoneRight.addEventListener('dragleave', () => dropzoneRight.classList.remove('drag-over'));
+dropzoneRight.addEventListener('drop', e => {
+  e.preventDefault(); dropzoneRight.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) loadMdFile(e.dataTransfer.files[0]);
+});
+
+rightFileRemove.addEventListener('click', e => {
+  e.preventDefault();
+  mdInput.value = ''; rightWC.textContent = '';
+  rightFileInfo.classList.remove('visible');
+  mdFileInput.value = ''; outputFname.value = '';
+  currentMdFile = null;
+  clearStatus(rightStatus);
+});
+
+mdInput.addEventListener('input', () => {
+  rightWC.textContent = wordCount(mdInput.value);
+  // 手动编辑时同步更新 File 对象
+  if (mdInput.value !== (currentMdFile ? '已加载' : '')) {
+    currentMdFile = null; // 内容已被手动修改，后续用文本方式构造 Blob
+  }
+});
+
+document.getElementById('btnClearRight').addEventListener('click', () => {
+  mdInput.value = ''; rightWC.textContent = '';
+  rightFileInfo.classList.remove('visible');
+  mdFileInput.value = ''; clearStatus(rightStatus);
+  outputFname.value = ''; currentMdFile = null;
+  selectedImages = []; updateImageList();
+});
+
+/* ── 构建 FormData（md 文件 + 图片） ───────────────────────── */
+function buildFormData() {
+  const md = mdInput.value.trim();
+  if (!md) return null;
+  const fname = outputFname.value.trim() || 'document';
+  const fd = new FormData();
+  // md 文件：优先用原始 File 对象（保留文件名），否则从文本构造 Blob
+  const mdBlob = currentMdFile || new Blob([md], {type: 'text/markdown'});
+  const mdFileName = currentMdFile ? currentMdFile.name : `${fname}.md`;
+  fd.append('mdfile', mdBlob, mdFileName);
+  // 图片文件
+  for (const img of selectedImages) {
+    fd.append('images', img, img.name);
+  }
+  return fd;
+}
+
+/* ── 通用下载函数（FormData 版） ───────────────────────────── */
+async function downloadConverted(endpoint, spinner, ext) {
+  const md = mdInput.value.trim();
+  if (!md) { setStatus(rightStatus, 'error', '❌ 请先输入 Markdown 内容'); return; }
+
+  const fname = outputFname.value.trim() || 'document';
+  const fd = buildFormData();
+
+  spinner.style.display = 'inline-block';
+  const imgNote = selectedImages.length > 0 ? `，含 ${selectedImages.length} 张图片` : '';
+  setStatus(rightStatus, 'loading', `<span class="spinner"></span>&nbsp; 正在生成${imgNote}…`);
+
+  try {
+    const res = await fetch(endpoint, { method: 'POST', body: fd });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setStatus(rightStatus, 'error', '❌ ' + (data.error || '转换失败'));
+      return;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${fname}.${ext}`; a.click();
+    URL.revokeObjectURL(url);
+    setStatus(rightStatus, 'success', `✅ ${ext.toUpperCase()} 已下载！`);
+  } catch(e) {
+    setStatus(rightStatus, 'error', '❌ 网络错误，请确认服务器正在运行');
+  } finally {
+    spinner.style.display = 'none';
+  }
+}
+
+btnToDocx.addEventListener('click', () => downloadConverted('/api/to-docx', spinnerDocx, 'docx'));
+btnToPdf.addEventListener('click',  () => downloadConverted('/api/to-pdf',  spinnerPdf,  'pdf'));
+</script>
+</body>
+</html>
