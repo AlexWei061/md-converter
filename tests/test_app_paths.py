@@ -77,6 +77,7 @@ class ConverterPathTests(unittest.TestCase):
             [
                 "![space](images/test%20pic.png)",
                 "![angle](<images/test pic.png>)",
+                "![rawspace](images/test pic.png)",
                 r"![win](images\图 1.png)",
                 r'<img src="C:\fakepath\图%201.png" alt="图">',
             ]
@@ -91,6 +92,7 @@ class ConverterPathTests(unittest.TestCase):
 
         self.assertIn("![space](test pic.png)", rewritten)
         self.assertIn("![angle](test pic.png)", rewritten)
+        self.assertIn("![rawspace](test pic.png)", rewritten)
         self.assertIn("![win](图 1.png)", rewritten)
         self.assertIn('src="图 1.png"', rewritten)
 
@@ -100,6 +102,23 @@ class ConverterPathTests(unittest.TestCase):
         self.assertIn("实分析", name)
         self.assertNotIn("Users", name)
         self.assertNotRegex(name, r'[\\/:*?"<>|]')
+
+    def test_run_text_uses_default_timeout(self):
+        calls = []
+        original_run = app_module.subprocess.run
+
+        def fake_run(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        app_module.subprocess.run = fake_run
+        try:
+            app_module.run_text(["fake-command"])
+        finally:
+            app_module.subprocess.run = original_run
+
+        self.assertEqual(calls[0][0], ["fake-command"])
+        self.assertEqual(calls[0][1]["timeout"], 120)
 
     def test_to_html_endpoint_is_removed(self):
         response = self.client.post("/api/to-html")

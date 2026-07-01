@@ -104,13 +104,14 @@ def send_generated_file(path, download_name, mimetype):
     )
 
 
-def run_text(cmd, **kwargs):
+def run_text(cmd, timeout=120, **kwargs):
     return subprocess.run(
         cmd,
         capture_output=True,
         text=True,
         encoding='utf-8',
         errors='replace',
+        timeout=timeout,
         **kwargs,
     )
 
@@ -372,8 +373,6 @@ def to_pdf():
 
     try:
         def build_embedded_html():
-            if html_path.exists():
-                return True, ''
             result = run_text(
                 ['pandoc', md_path.name, '-o', str(html_path), '--standalone',
                  '--embed-resources',
