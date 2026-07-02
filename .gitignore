@@ -1,6 +1,10 @@
 __pycache__/
+*.pyc
 outputs/
 tmp/
 uploads/
+.venv/
+.env
+.DS_Store
 
 *.log

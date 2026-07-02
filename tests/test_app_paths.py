@@ -209,6 +209,33 @@ class ConverterPathTests(unittest.TestCase):
         self.assertNotIn("innerHTML", html)
         self.assertNotIn('onclick="removeImage', html)
 
+    def test_dockerfile_runs_app_as_non_root_user(self):
+        dockerfile = Path(app_module.BASE_DIR / "Dockerfile").read_text(encoding="utf-8")
+
+        self.assertIn("useradd", dockerfile)
+        self.assertIn("USER appuser", dockerfile)
+        self.assertIn("chown -R appuser:appuser", dockerfile)
+
+    def test_gitignore_excludes_runtime_and_local_files(self):
+        gitignore = Path(app_module.BASE_DIR / ".gitignore").read_text(encoding="utf-8")
+
+        for pattern in ("uploads/", "outputs/", "__pycache__/", "*.pyc", ".venv/", ".env", ".DS_Store"):
+            self.assertIn(pattern, gitignore)
+
+    def test_readme_prominently_lists_local_and_docker_urls(self):
+        readme = Path(app_module.BASE_DIR / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn("Local Python: http://127.0.0.1:5001", readme)
+        self.assertIn("Docker:       http://localhost:5000", readme)
+
+    def test_readme_screenshot_asset_exists(self):
+        readme = Path(app_module.BASE_DIR / "README.md").read_text(encoding="utf-8")
+        screenshot = Path(app_module.BASE_DIR / "docs" / "screenshot.png")
+
+        self.assertIn("![MD Converter screenshot](docs/screenshot.png)", readme)
+        self.assertTrue(screenshot.is_file())
+        self.assertGreater(screenshot.stat().st_size, 0)
+
     def test_to_html_endpoint_is_removed(self):
         response = self.client.post("/api/to-html")
 

@@ -1,8 +1,19 @@
 # MD Converter
 
+![MD Converter screenshot](docs/screenshot.png)
+
 MD Converter 是一个 **local-first** 的 Markdown 文档转换工作台，基于 **Flask + MarkItDown + Pandoc** 构建。它适合在本机或可信内部网络中处理中文文档、学术笔记、AI 预处理材料，以及 Markdown 到 Word/PDF 的导出。
 
 > 这个项目不是可直接暴露到公网的 SaaS 平台。公开部署前需要额外加入认证、隔离、队列、限流、沙箱和运维监控。
+
+默认访问地址：
+
+```text
+Local Python: http://127.0.0.1:5001
+Docker:       http://localhost:5000
+```
+
+本地 Python 默认使用 `5001` 是为了避开 macOS AirPlay Receiver 常占用的 `5000` 端口；Docker Compose 仍映射到更常见的 `localhost:5000`。
 
 当前支持：
 
