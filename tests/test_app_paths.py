@@ -120,6 +120,22 @@ class ConverterPathTests(unittest.TestCase):
         self.assertEqual(calls[0][0], ["fake-command"])
         self.assertEqual(calls[0][1]["timeout"], 120)
 
+    def test_dev_server_uses_non_airplay_port(self):
+        calls = []
+        original_run = app_module.app.run
+
+        def fake_run(**kwargs):
+            calls.append(kwargs)
+
+        app_module.app.run = fake_run
+        try:
+            app_module.run_server()
+        finally:
+            app_module.app.run = original_run
+
+        self.assertEqual(calls[0]["port"], 5001)
+        self.assertTrue(calls[0]["debug"])
+
     def test_to_html_endpoint_is_removed(self):
         response = self.client.post("/api/to-html")
 

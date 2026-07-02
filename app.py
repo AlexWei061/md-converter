@@ -12,6 +12,7 @@ from flask import Flask, request, jsonify, send_file, render_template
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / 'uploads'
 OUTPUT_DIR = BASE_DIR / 'outputs'
+DEV_SERVER_PORT = 5001
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024  # 200MB（图片可能较大）
@@ -509,5 +510,9 @@ def check_deps():
     return jsonify(deps)
 
 
+def run_server():
+    app.run(debug=True, port=DEV_SERVER_PORT)
+
+
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    run_server()

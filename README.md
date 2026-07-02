@@ -129,7 +129,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-浏览器访问 **http://localhost:5000** 即可使用。
+浏览器访问 **http://127.0.0.1:5001** 即可使用。
 
 ---
 
