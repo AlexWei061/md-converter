@@ -12,10 +12,45 @@ from flask import Flask, request, jsonify, send_file, render_template
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / 'uploads'
 OUTPUT_DIR = BASE_DIR / 'outputs'
+DEFAULT_MAX_UPLOAD_MB = 200
+DEFAULT_SERVER_HOST = '127.0.0.1'
 DEV_SERVER_PORT = 5001
 
+
+def parse_max_upload_mb(value):
+    try:
+        max_upload_mb = int(str(value or '').strip())
+    except ValueError:
+        return DEFAULT_MAX_UPLOAD_MB
+    return max_upload_mb if max_upload_mb > 0 else DEFAULT_MAX_UPLOAD_MB
+
+
+def max_upload_bytes(env=None):
+    env = os.environ if env is None else env
+    return parse_max_upload_mb(env.get('MAX_UPLOAD_MB')) * 1024 * 1024
+
+
+def debug_enabled(env=None):
+    env = os.environ if env is None else env
+    return str(env.get('FLASK_DEBUG', '')).strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def server_host(env=None):
+    env = os.environ if env is None else env
+    return str(env.get('APP_HOST') or DEFAULT_SERVER_HOST).strip() or DEFAULT_SERVER_HOST
+
+
+def server_port(env=None):
+    env = os.environ if env is None else env
+    try:
+        port = int(str(env.get('APP_PORT') or '').strip())
+    except ValueError:
+        return DEV_SERVER_PORT
+    return port if port > 0 else DEV_SERVER_PORT
+
+
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024  # 200MB（图片可能较大）
+app.config['MAX_CONTENT_LENGTH'] = max_upload_bytes()  # 默认 200MB（图片可能较大）
 app.config['UPLOAD_FOLDER'] = str(UPLOAD_DIR)
 app.config['OUTPUT_FOLDER'] = str(OUTPUT_DIR)
 
@@ -511,7 +546,7 @@ def check_deps():
 
 
 def run_server():
-    app.run(debug=True, port=DEV_SERVER_PORT)
+    app.run(host=server_host(), port=server_port(), debug=debug_enabled())
 
 
 if __name__ == '__main__':

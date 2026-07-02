@@ -1,0 +1,12 @@
+.git
+.gitignore
+.codex
+.agents
+.venv
+__pycache__/
+*.py[cod]
+*.log
+.DS_Store
+uploads/
+outputs/
+tmp/

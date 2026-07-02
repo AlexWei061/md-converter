@@ -261,6 +261,22 @@
       margin-top: 0.6rem; min-height: 0;
     }
     #rightPanel .editor-wrap textarea { flex: 1; min-height: 160px; }
+    .image-list-row {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.2rem 0; font-size: 0.78rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .image-list-name {
+      flex: 1; font-family: var(--mono); color: var(--text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .image-list-size { color: var(--muted); flex-shrink: 0; }
+    .image-list-remove {
+      background: transparent; border: none; padding: 0;
+      color: var(--muted); cursor: pointer; flex-shrink: 0;
+      font: inherit;
+    }
+    .image-list-remove:hover { color: var(--red); }
 
     /* ── Scrollbar ─────────────────────────────────────────── */
     ::-webkit-scrollbar { width: 6px; }
@@ -445,13 +461,20 @@ async function checkDeps() {
 checkDeps();
 
 /* ── 工具函数 ──────────────────────────────────────────────── */
-function setStatus(el, type, msg) {
+function setStatus(el, type, msg, options = {}) {
   el.className = `status ${type} visible`;
-  el.innerHTML = msg;
+  el.replaceChildren();
+  if (options.spinner) {
+    const spinner = document.createElement('span');
+    spinner.className = 'spinner';
+    el.append(spinner, document.createTextNode(` ${msg}`));
+    return;
+  }
+  el.textContent = msg;
 }
 function clearStatus(el) {
   el.className = 'status';
-  el.textContent = '';
+  el.replaceChildren();
 }
 
 function formatSize(bytes) {
@@ -539,7 +562,7 @@ btnConvert.addEventListener('click', async () => {
   if (!selectedFile) return;
   btnConvert.disabled = true;
   spinnerLeft.style.display = 'inline-block';
-  setStatus(leftStatus, 'loading', '<span class="spinner"></span>&nbsp; 正在转换，请稍候…');
+  setStatus(leftStatus, 'loading', '正在转换，请稍候…', { spinner: true });
 
   const formData = new FormData();
   formData.append('file', selectedFile);
@@ -610,24 +633,38 @@ let selectedImages = [];
 
 /* ── 图片选择逻辑 ──────────────────────────────────────────── */
 function updateImageList() {
+  imgList.replaceChildren();
   if (selectedImages.length === 0) {
     imgList.style.display = 'none';
-    imgList.innerHTML = '';
     return;
   }
   imgList.style.display = 'block';
-  imgList.innerHTML = selectedImages.map((f, i) => `
-    <div style="display:flex;align-items:center;gap:0.5rem;padding:0.2rem 0;
-                font-size:0.78rem;border-bottom:1px solid var(--border);">
-      <span>🖼️</span>
-      <span style="flex:1;font-family:var(--mono);color:var(--text);
-                   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
-            title="${f.name}">${f.name}</span>
-      <span style="color:var(--muted);flex-shrink:0;">${formatSize(f.size)}</span>
-      <span style="cursor:pointer;color:var(--muted);flex-shrink:0;"
-            onclick="removeImage(${i})">✕</span>
-    </div>
-  `).join('');
+  selectedImages.forEach((f, i) => {
+    const row = document.createElement('div');
+    row.className = 'image-list-row';
+
+    const icon = document.createElement('span');
+    icon.textContent = '🖼️';
+
+    const name = document.createElement('span');
+    name.className = 'image-list-name';
+    name.textContent = f.name;
+    name.title = f.name;
+
+    const size = document.createElement('span');
+    size.className = 'image-list-size';
+    size.textContent = formatSize(f.size);
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'image-list-remove';
+    remove.textContent = '✕';
+    remove.title = '移除';
+    remove.addEventListener('click', () => removeImage(i));
+
+    row.append(icon, name, size, remove);
+    imgList.appendChild(row);
+  });
 }
 
 function removeImage(idx) {
@@ -743,7 +780,7 @@ async function downloadConverted(endpoint, spinner, ext) {
 
   spinner.style.display = 'inline-block';
   const imgNote = selectedImages.length > 0 ? `，含 ${selectedImages.length} 张图片` : '';
-  setStatus(rightStatus, 'loading', `<span class="spinner"></span>&nbsp; 正在生成${imgNote}…`);
+  setStatus(rightStatus, 'loading', `正在生成${imgNote}…`, { spinner: true });
 
   try {
     const res = await fetch(endpoint, { method: 'POST', body: fd });

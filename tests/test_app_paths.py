@@ -120,9 +120,37 @@ class ConverterPathTests(unittest.TestCase):
         self.assertEqual(calls[0][0], ["fake-command"])
         self.assertEqual(calls[0][1]["timeout"], 120)
 
-    def test_dev_server_uses_non_airplay_port(self):
+    def test_max_upload_mb_parsing_defaults_and_fallbacks(self):
+        self.assertEqual(app_module.parse_max_upload_mb(None), 200)
+        self.assertEqual(app_module.parse_max_upload_mb(""), 200)
+        self.assertEqual(app_module.parse_max_upload_mb("abc"), 200)
+        self.assertEqual(app_module.parse_max_upload_mb("0"), 200)
+        self.assertEqual(app_module.parse_max_upload_mb("-1"), 200)
+        self.assertEqual(app_module.parse_max_upload_mb("64"), 64)
+
+    def test_upload_size_bytes_uses_configured_mb(self):
+        self.assertEqual(
+            app_module.max_upload_bytes({"MAX_UPLOAD_MB": "32"}),
+            32 * 1024 * 1024,
+        )
+        self.assertEqual(
+            app_module.max_upload_bytes({"MAX_UPLOAD_MB": "bad"}),
+            200 * 1024 * 1024,
+        )
+
+    def test_debug_mode_requires_explicit_env(self):
+        self.assertFalse(app_module.debug_enabled({}))
+        self.assertFalse(app_module.debug_enabled({"FLASK_DEBUG": "0"}))
+        self.assertFalse(app_module.debug_enabled({"FLASK_DEBUG": "false"}))
+        self.assertTrue(app_module.debug_enabled({"FLASK_DEBUG": "1"}))
+        self.assertTrue(app_module.debug_enabled({"FLASK_DEBUG": "true"}))
+
+    def test_dev_server_uses_safe_local_defaults(self):
         calls = []
         original_run = app_module.app.run
+        old_debug = os.environ.pop("FLASK_DEBUG", None)
+        old_host = os.environ.pop("APP_HOST", None)
+        old_port = os.environ.pop("APP_PORT", None)
 
         def fake_run(**kwargs):
             calls.append(kwargs)
@@ -132,9 +160,54 @@ class ConverterPathTests(unittest.TestCase):
             app_module.run_server()
         finally:
             app_module.app.run = original_run
+            if old_debug is not None:
+                os.environ["FLASK_DEBUG"] = old_debug
+            if old_host is not None:
+                os.environ["APP_HOST"] = old_host
+            if old_port is not None:
+                os.environ["APP_PORT"] = old_port
 
         self.assertEqual(calls[0]["port"], 5001)
+        self.assertEqual(calls[0]["host"], "127.0.0.1")
+        self.assertFalse(calls[0]["debug"])
+
+    def test_dev_server_allows_explicit_debug_host_and_port(self):
+        calls = []
+        original_run = app_module.app.run
+        old_debug = os.environ.get("FLASK_DEBUG")
+        old_host = os.environ.get("APP_HOST")
+        old_port = os.environ.get("APP_PORT")
+
+        def fake_run(**kwargs):
+            calls.append(kwargs)
+
+        os.environ["FLASK_DEBUG"] = "1"
+        os.environ["APP_HOST"] = "0.0.0.0"
+        os.environ["APP_PORT"] = "5000"
+        app_module.app.run = fake_run
+        try:
+            app_module.run_server()
+        finally:
+            app_module.app.run = original_run
+            for key, old_value in (
+                ("FLASK_DEBUG", old_debug),
+                ("APP_HOST", old_host),
+                ("APP_PORT", old_port),
+            ):
+                if old_value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = old_value
+
+        self.assertEqual(calls[0]["port"], 5000)
+        self.assertEqual(calls[0]["host"], "0.0.0.0")
         self.assertTrue(calls[0]["debug"])
+
+    def test_frontend_avoids_inner_html_dynamic_rendering(self):
+        html = Path(app_module.BASE_DIR / "templates" / "index.html").read_text(encoding="utf-8")
+
+        self.assertNotIn("innerHTML", html)
+        self.assertNotIn('onclick="removeImage', html)
 
     def test_to_html_endpoint_is_removed(self):
         response = self.client.post("/api/to-html")
